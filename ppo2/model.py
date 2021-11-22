@@ -1,55 +1,41 @@
 import torch
 import torch.nn as nn
-from torch.distributions import MultivariateNormal
-from torch.distributions import Categorical
 
-
-class ActorCritic(nn.Module):
-	def __init__(self, state_dim, action_dim):
-		super(ActorCritic, self).__init__()
-
-
-		# actor
-		self.actor = nn.Sequential(
-						nn.Linear(state_dim, 64),
-						nn.LeakyReLU(),
-						nn.Linear(64, 64),
-						nn.LeakyReLU(),
-						nn.Linear(64, action_dim),
-						nn.Softmax(dim=-1)
-					)
-
-		
-		# critic
-		self.critic = nn.Sequential(
-						nn.Linear(state_dim, 64),
-						nn.LeakyReLU(),
-						nn.Linear(64, 64),
-						nn.LeakyReLU(),
-						nn.Linear(64, 1)
-					)
-
-	def forward(self):
-		raise NotImplementedError
+class StateExtractor(nn.Module):
 	
+	def __init__(self):
+		pass
 
-	def act(self, state):
-		action_probs = self.actor(state)
-		dist = Categorical(action_probs)
+class Critic(nn.Module):
 
-		action = dist.sample()
-		action_logprob = dist.log_prob(action)
-		
-		return action.detach(), action_logprob.detach()
+	def __init__(self,state_dim):
+		super(Critic, self).__init__()
+		self.fc = nn.Sequential(
+			nn.Linear(state_dim,64),
+			nn.LeakyReLU(),
+			nn.Linear(64,64),
+			nn.LeakyReLU(),
+			nn.Linear(64,1)
+		)
+
+	def forward(self,x):
+		return self.fc(x)
+
 	
+class Actor(nn.Module):
 
-	def evaluate(self, state, action):
+	def __init__(self,state_dim,act_dim):
+		super(Actor, self).__init__()
+		self.fc = nn.Sequential(
+			nn.Linear(state_dim,64),
+			nn.LeakyReLU(),
+			nn.Linear(64,64),
+			nn.LeakyReLU(),
+			nn.Linear(64,act_dim),
+			nn.Softmax(-1)
+		)
 
-		action_probs = self.actor(state)
-		dist = Categorical(action_probs)
-		action_logprobs = dist.log_prob(action)
-		dist_entropy = dist.entropy()
-		state_values = self.critic(state)
+	def forward(self,x):
+		return self.fc(x)
+
 		
-		return action_logprobs, state_values, dist_entropy
-

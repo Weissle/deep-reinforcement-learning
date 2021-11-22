@@ -19,30 +19,38 @@ class Agent:
 		self.algorithm = PPO(cfg)
 
 		self.buffer = RolloutBuffer()
+		self.tensorboard = cfg.logs.tensorboard
+		self.learn_times = 0
 
-	def sample(self,observation):
-		observation = torch.Tensor(observation).float()
-		prob = self.algorithm.predict(observation.to(self.device))
-		dist = Categorical(prob)		
+	def sample(self,state):
+		state = torch.FloatTensor(state).to(self.device)
+		action_prob = self.algorithm.predict(state)
+
+		dist = Categorical(action_prob)
+
 		action = dist.sample()
-		action_logprob = dist.log_prob(action)
-		
-		self.buffer.states.append(observation)
-		self.buffer.actions.append(action)
-		self.buffer.logprobs.append(action_logprob)
+		action_logprob = dist.log_prob(action).detach()
+
+		self.buffer.value.append(self.algorithm.value(state).cpu())
+		self.buffer.states.append(state.cpu())
+		self.buffer.actions.append(action.cpu())
+		self.buffer.logprobs.append(action_logprob.cpu())
+
 		return action.item()
 
-	def predict(self,observation):
-		observation = torch.Tensor(observation).float()
-		return torch.argmax(self.algorithm.predict(observation.to(self.device))).item()
+	def predict(self,state):
+		state = torch.FloatTensor(state).to(self.device)
+		return torch.argmax(self.algorithm.predict(state)).item()
 
-	def reset(self):
-		self.algorithm.reset()
-		self.buffer.reset()
 
 	def learn(self):
-		self.algorithm.learn(self.buffer)
-		self.algorithm.sync_target(1)
+		loss = self.algorithm.learn(self.buffer)
+		if self.tensorboard != None:
+			self.tensorboard.add_scalar('loss',loss,self.learn_times)
+		else:
+			print(f'loss : {loss}')
+		self.learn_times += 1
+		self.buffer.reset()
 
 	def put_reward_done_data(self,reward,done):
 		self.buffer.rewards.append(reward)
@@ -50,3 +58,11 @@ class Agent:
 
 	def save(self):
 		self.algorithm.save()
+
+	def buffer_size(self):
+		return len(self.buffer.states)
+
+	def reset(self):
+		pass
+	
+
