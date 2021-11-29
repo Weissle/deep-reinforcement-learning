@@ -22,6 +22,8 @@ class Agent:
 		self.tensorboard = cfg.logs.tensorboard
 		self.learn_times = 0
 
+
+
 	def sample(self,state):
 		state = torch.FloatTensor(state).to(self.device)
 		action_prob = self.algorithm.predict(state)
@@ -51,6 +53,7 @@ class Agent:
 			print(f'loss : {loss}')
 		self.learn_times += 1
 		self.buffer.reset()
+		# self.greedy = max(self.greedy-self.greedy_decrease,self.greedy_min)
 
 	def put_reward_done_data(self,reward,done):
 		self.buffer.rewards.append(reward)

@@ -20,10 +20,8 @@ class PPO:
 
 		self.actor = Actor(cfg.env_cfg.state_dim, cfg.env_cfg.act_dim).to(self.device)
 		self.critic = Critic(cfg.env_cfg.state_dim).to(self.device)
-		self.target_actor = Actor(cfg.env_cfg.state_dim, cfg.env_cfg.act_dim).to(self.device)
 		self.load()
 
-		self.sync_target(1)
 
 		self.optimizer = torch.optim.Adam([
 						{'params': self.actor.parameters(), 'lr': cfg.actor.lr},
@@ -33,18 +31,10 @@ class PPO:
 		self.MseLoss = nn.MSELoss()
 		self.lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer,milestones=cfg.warmup.milestones,gamma=cfg.warmup.gamma)
 
-	def _soft_update(self,target,source,t):
-		for target_param,source_param in zip(target.parameters(),source.parameters()):
-			target_param.data.copy_(
-				(1-t)*target_param.data + t*source_param.data
-			)
-
-	def sync_target(self,t):
-		self._soft_update(self.target_actor,self.actor,t)
 
 	def predict(self, state):
 		with torch.no_grad():
-			action = self.target_actor(state).detach()
+			action = self.actor(state).detach()
 			return action
 
 	def value(self,state):
@@ -104,9 +94,10 @@ class PPO:
 		old_logprobs = torch.squeeze(torch.stack(buffer.logprobs, dim=0)).detach().to(self.device)
 		old_returns = torch.FloatTensor(buffer.returns).detach().to(self.device)
 		old_advantages = torch.FloatTensor(buffer.advantages).detach().to(self.device)
+		old_value = torch.FloatTensor(buffer.value).detach().to(self.device)
 
-		old_returns = (old_returns - old_returns.mean()) / (old_returns.std() + 1e-7)
-		old_advantages = (old_advantages - old_advantages.mean()) / (old_advantages.std() + 1e-7)
+		old_returns = (old_returns - old_returns.mean()) / (old_returns.std() + 1e-5)
+		# old_advantages = (old_advantages - old_advantages.mean()) / (old_advantages.std() + 1e-5)
 
 		
 		# Optimize policy for K epochs
@@ -121,19 +112,15 @@ class PPO:
 			
 			# Finding the ratio (pi_theta / pi_theta__old)
 			ratios = torch.exp(logprobs - old_logprobs.detach())
-
-			if self.use_gae:
-				advantages,_ = self.calculate_advantages(buffer) - state_values.detach()
-			else:
-				advantages = old_returns - state_values.detach()
+			
 
 			# Finding Surrogate Loss
-			surr1 = ratios * advantages
-			surr2 = torch.clamp(ratios, 1-self.eps_clip, 1+self.eps_clip) * advantages
+			surr1 = ratios * old_advantages
+			surr2 = torch.clamp(ratios, 1-self.eps_clip, 1+self.eps_clip) * old_advantages
 
 			# final loss of clipped objective PPO
 			loss = -torch.min(surr1, surr2) + 0.5*self.MseLoss(state_values, old_returns) - 0.01*dist_entropy
-			
+
 			# take gradient step
 			self.optimizer.zero_grad()
 			loss = loss.mean()
@@ -141,7 +128,6 @@ class PPO:
 			self.optimizer.step()
 			
 		# Copy new weights into old policy
-		self.sync_target(1)
 		self.lr_scheduler.step()
 		return loss.item()
 
